@@ -551,6 +551,49 @@ function exchangeModal() {
   upd();
 }
 
+/* резервная копия: прогресс -> текстовый код и обратно */
+function stateCode() {
+  return "GARAGE1:" + btoa(unescape(encodeURIComponent(JSON.stringify(state))));
+}
+function backupModal() {
+  const code = stateCode();
+  const ov = openModal(
+    "<h3>📤 Код прогресса</h3>" +
+    "<p>Скопируйте код и сохраните — например, перешлите себе в «Избранное» в Telegram. По нему можно вернуть весь прогресс на любом телефоне.</p>" +
+    '<textarea class="inp" id="bkText" readonly style="height:110px;font-size:11px;word-break:break-all"></textarea>' +
+    '<div class="mbtns"><button class="btn ghost" id="mno">Закрыть</button><button class="btn" id="mok">Скопировать</button></div>');
+  ov.querySelector("#bkText").value = code;
+  ov.querySelector("#mno").onclick = () => closeModal(ov);
+  ov.querySelector("#mok").onclick = async () => {
+    const ta = ov.querySelector("#bkText");
+    ta.select(); ta.setSelectionRange(0, 9999999);
+    let ok = false;
+    try { await navigator.clipboard.writeText(code); ok = true; }
+    catch (e) { try { ok = document.execCommand("copy"); } catch (e2) {} }
+    ov.querySelector("#mok").textContent = ok ? "Скопировано ✓" : "Выделите и скопируйте вручную";
+  };
+}
+function restoreModal() {
+  const ov = openModal(
+    "<h3>📥 Восстановление</h3><p>Вставьте код прогресса. Текущие данные будут заменены.</p>" +
+    '<textarea class="inp" id="rsText" style="height:110px;font-size:11px;word-break:break-all" placeholder="GARAGE1:..."></textarea>' +
+    '<div class="mbtns"><button class="btn ghost" id="mno">Отмена</button><button class="btn" id="mok">Восстановить</button></div>');
+  ov.querySelector("#mno").onclick = () => closeModal(ov);
+  ov.querySelector("#mok").onclick = async () => {
+    const raw = ov.querySelector("#rsText").value.trim();
+    if (!raw.startsWith("GARAGE1:")) { modalAlert("Код не подходит", "Код должен начинаться с GARAGE1:"); return; }
+    let parsed = null;
+    try { parsed = JSON.parse(decodeURIComponent(escape(atob(raw.slice(8))))); } catch (e) {}
+    if (!parsed || !Array.isArray(parsed.tasks)) { modalAlert("Код повреждён", "Проверьте, что код скопирован целиком, без пропусков."); return; }
+    closeModal(ov);
+    if (await modalConfirm("Заменить данные?", "Весь текущий прогресс будет заменён данными из кода.", "Восстановить", true)) {
+      state = migrate(parsed);
+      rollover(); save(); render();
+      modalAlert("Готово ✓", "Прогресс восстановлен.");
+    }
+  };
+}
+
 function fmt(n) { return (Math.round(n * 100) / 100).toLocaleString("ru-RU"); }
 function round2(n) { return Math.round(n * 100) / 100; }
 
@@ -959,6 +1002,10 @@ function renderParent() {
       '<div class="prow"><input class="inp" id="pPin" type="password" inputmode="numeric" maxlength="6" placeholder="Новый PIN (4–6 цифр)">' +
       '<button class="btn small" id="pPinSave">OK</button></div></div>' +
 
+    '<div class="card"><div class="cardtitle">РЕЗЕРВНАЯ КОПИЯ</div>' +
+      '<div class="prow"><button class="btn small ghost" id="pBackup" style="flex:1">📤 Код прогресса</button>' +
+      '<button class="btn small ghost" id="pRestoreBk" style="flex:1">📥 Восстановить</button></div></div>' +
+
     '<div class="card"><div class="cardtitle">ОПАСНАЯ ЗОНА</div>' +
       '<button class="btn danger" id="pReset" style="width:100%">Сбросить всё</button></div>' +
 
@@ -1012,6 +1059,8 @@ function renderParent() {
     if (/^\d{4,6}$/.test(v)) { state.pin = v; $("pPin").value = ""; save(); flash($("pPinSave")); }
     else modalAlert("PIN не подходит", "Нужно 4–6 цифр.");
   };
+  $("pBackup").onclick = backupModal;
+  $("pRestoreBk").onclick = restoreModal;
   $("pReset").onclick = async () => {
     if (await modalConfirm("Сбросить всё?", "Все баллы, серии, задачи и награды будут удалены безвозвратно.", "Сбросить", true)) {
       const keepName = state.name;
